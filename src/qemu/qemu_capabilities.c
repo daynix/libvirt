@@ -624,6 +624,7 @@ VIR_ENUM_IMPL(virQEMUCaps,
               "audiodev",
               "blockdev-backup",
               "object.qapified",
+              "virtio-net.rss",
     );
 
 
@@ -1407,6 +1408,7 @@ static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsVirtioNet[] = {
     { "ats", QEMU_CAPS_VIRTIO_PCI_ATS, NULL },
     { "failover", QEMU_CAPS_VIRTIO_NET_FAILOVER, NULL },
     { "packed", QEMU_CAPS_VIRTIO_PACKED_QUEUES, NULL },
+    { "rss", QEMU_CAPS_VIRTIO_RSS, NULL },
 };
 
 static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsPCIeRootPort[] = {
