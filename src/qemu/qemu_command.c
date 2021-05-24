@@ -3588,6 +3588,16 @@ qemuBuildNicDevStr(virDomainDefPtr def,
         if (net->driver.virtio.tx_queue_size)
             virBufferAsprintf(&buf, ",tx_queue_size=%u", net->driver.virtio.tx_queue_size);
 
+        if (net->driver.virtio.rss == VIR_TRISTATE_SWITCH_ON) {
+            virBufferAsprintf(&buf, ",rss=%s",
+                    virTristateSwitchTypeToString(net->driver.virtio.rss));
+        }
+
+        if (net->driver.virtio.rss_hash_report == VIR_TRISTATE_SWITCH_ON) {
+            virBufferAsprintf(&buf, ",hash=%s",
+                    virTristateSwitchTypeToString(net->driver.virtio.rss_hash_report));
+        }
+
         if (net->mtu)
             virBufferAsprintf(&buf, ",host_mtu=%u", net->mtu);
 
