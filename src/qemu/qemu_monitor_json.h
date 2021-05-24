@@ -719,3 +719,6 @@ qemuMonitorJSONStartDirtyRateCalc(qemuMonitorPtr mon,
 int
 qemuMonitorJSONQueryDirtyRate(qemuMonitorPtr mon,
                               qemuMonitorDirtyRateInfoPtr info);
+
+GHashTable *
+qemuMonitorJSONGetHelperPath(qemuMonitorPtr mon);

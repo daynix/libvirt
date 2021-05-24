@@ -4781,3 +4781,12 @@ qemuMonitorQueryDirtyRate(qemuMonitorPtr mon,
 
     return qemuMonitorJSONQueryDirtyRate(mon, info);
 }
+
+
+GHashTable *
+qemuMonitorGetHelperPath(qemuMonitorPtr mon)
+{
+    QEMU_CHECK_MONITOR_NULL(mon);
+
+    return qemuMonitorJSONGetHelperPath(mon);
+}

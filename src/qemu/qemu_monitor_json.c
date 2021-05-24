@@ -9568,3 +9568,52 @@ qemuMonitorJSONQueryDirtyRate(qemuMonitorPtr mon,
 
     return qemuMonitorJSONExtractDirtyRateInfo(data, info);
 }
+
+static int
+qemuMonitorJSONGetHelperPathWorker(size_t pos G_GNUC_UNUSED,
+                                    virJSONValuePtr item,
+                                    void *opaque)
+{
+    const char *name = virJSONValueObjectGetString(item, "name");
+    const char *path = virJSONValueObjectGetString(item, "path");
+    GHashTable *path_list = opaque;
+
+    if (!name) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("reply data was missing 'name'"));
+        return -1;
+    }
+
+    if (virHashAddEntry(path_list, name, g_strdup(path)) < 0)
+        return -1;
+
+    return 0;
+}
+
+GHashTable *
+qemuMonitorJSONGetHelperPath(qemuMonitorPtr mon)
+{
+    g_autoptr(GHashTable) path_list = virHashNew(g_free);
+    g_autoptr(virJSONValue) cmd = NULL;
+    g_autoptr(virJSONValue) reply = NULL;
+
+    if (!(cmd = qemuMonitorJSONMakeCommand("query-helper-path", NULL)))
+        return NULL;
+
+    if (qemuMonitorJSONCommand(mon, cmd, &reply) < 0)
+        return NULL;
+
+    /* return empty hash */
+    if (qemuMonitorJSONHasError(reply, "CommandNotFound"))
+        return g_steal_pointer(&path_list);
+
+    if (qemuMonitorJSONCheckReply(cmd, reply, VIR_JSON_TYPE_ARRAY) < 0)
+        return NULL;
+
+    if (virJSONValueArrayForeachSteal(virJSONValueObjectGetArray(reply, "return"),
+            qemuMonitorJSONGetHelperPathWorker,
+            path_list) < 0)
+        return NULL;
+
+    return g_steal_pointer(&path_list);
+}

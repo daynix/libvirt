@@ -1541,3 +1541,6 @@ struct _qemuMonitorDirtyRateInfo {
 int
 qemuMonitorQueryDirtyRate(qemuMonitorPtr mon,
                           qemuMonitorDirtyRateInfoPtr info);
+
+GHashTable *
+qemuMonitorGetHelperPath(qemuMonitorPtr mon);
