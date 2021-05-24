@@ -1194,6 +1194,9 @@ qemuDomainAttachNetDevice(virQEMUDriverPtr driver,
     g_autofree char *netdev_name = NULL;
     g_autoptr(virConnect) conn = NULL;
     virErrorPtr save_err = NULL;
+    char **ebpfRSSfdsName = NULL;
+    int ebpfRSSfds[16] = {};
+    int ebpfRSSnfds = 0;
 
     /* preallocate new slot for device */
     VIR_REALLOC_N(vm->def->nets, vm->def->nnets + 1);
@@ -1458,8 +1461,23 @@ qemuDomainAttachNetDevice(virQEMUDriverPtr driver,
     for (i = 0; i < vhostfdSize; i++)
         VIR_FORCE_CLOSE(vhostfd[i]);
 
+    if (net->driver.virtio.rss == VIR_TRISTATE_SWITCH_ON
+            && virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_VIRTIO_EBPF_RSS_FDS)) {
+        ebpfRSSnfds = qemuRSSeBPFHelper(virQEMUCapsGetEBPFHelperPath(priv->qemuCaps), ebpfRSSfds, 16);
+        if (ebpfRSSnfds > 0) {
+            ebpfRSSfdsName = g_new0(char *, ebpfRSSnfds);
+            for (i = 0; i < ebpfRSSnfds; ++i) {
+                ebpfRSSfdsName[i] = g_strdup_printf("ebpfrssfd-%s%zu", net->info.alias, i);
+                if (qemuMonitorSendFileHandle(priv->mon, NULL, ebpfRSSfds[i])) {
+                    ebpfRSSnfds = 0;
+                    break;
+                }
+            }
+        }
+    }
+
     if (!(nicstr = qemuBuildNicDevStr(vm->def, net, 0,
-                                      queueSize, priv->qemuCaps)))
+                                      queueSize, ebpfRSSfdsName, ebpfRSSnfds, priv->qemuCaps)))
         goto try_remove;
 
     qemuDomainObjEnterMonitor(driver, vm);
@@ -1553,6 +1571,12 @@ qemuDomainAttachNetDevice(virQEMUDriverPtr driver,
     }
     VIR_FREE(vhostfd);
     VIR_FREE(vhostfdName);
+    for (i = 0; ret < 0 && ebpfRSSfds[i] && i < 16; i++) {
+        VIR_FORCE_CLOSE(ebpfRSSfds[i]);
+        if (ebpfRSSfdsName)
+            VIR_FREE(ebpfRSSfdsName[i]);
+    }
+    VIR_FREE(ebpfRSSfdsName);
     virDomainCCWAddressSetFree(ccwaddrs);
     VIR_FORCE_CLOSE(slirpfd);
     VIR_FORCE_CLOSE(vdpafd);
