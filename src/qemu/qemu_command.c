@@ -3470,11 +3470,14 @@ qemuBuildNicDevStr(virDomainDefPtr def,
                    virDomainNetDefPtr net,
                    unsigned int bootindex,
                    size_t vhostfdSize,
+                   char **ebpfRSSfds,
+                   size_t ebpfRSSnfds,
                    virQEMUCapsPtr qemuCaps)
 {
     g_auto(virBuffer) buf = VIR_BUFFER_INITIALIZER;
     bool usingVirtio = false;
     char macaddr[VIR_MAC_STRING_BUFLEN];
+    size_t i = 0;
 
     if (virDomainNetIsVirtioModel(net)) {
         if (qemuBuildVirtioDevStr(&buf, "virtio-net", qemuCaps,
@@ -3591,6 +3594,15 @@ qemuBuildNicDevStr(virDomainDefPtr def,
         if (net->driver.virtio.rss == VIR_TRISTATE_SWITCH_ON) {
             virBufferAsprintf(&buf, ",rss=%s",
                     virTristateSwitchTypeToString(net->driver.virtio.rss));
+
+            if (ebpfRSSfds != NULL && ebpfRSSnfds)
+            {
+                virBufferAsprintf(&buf, ",ebpf_rss_fds=");
+                for (i = 0; i < (ebpfRSSnfds - 1); ++i) {
+                     virBufferAsprintf(&buf, "%s:",ebpfRSSfds[i]);
+                }
+                virBufferAsprintf(&buf, "%s",ebpfRSSfds[ebpfRSSnfds - 1]);
+            }
         }
 
         if (net->driver.virtio.rss_hash_report == VIR_TRISTATE_SWITCH_ON) {
@@ -8559,6 +8571,9 @@ qemuBuildInterfaceCommandLine(virQEMUDriverPtr driver,
     qemuSlirpPtr slirp;
     size_t i;
     g_autoptr(virJSONValue) hostnetprops = NULL;
+    char **ebpfRSSfdsName = NULL;
+    int ebpfRSSfds[16] = {};
+    int ebpfRSSnfds = 0;
 
 
     if (!bootindex)
@@ -8805,8 +8820,20 @@ qemuBuildInterfaceCommandLine(virQEMUDriverPtr driver,
         if (qemuCommandAddExtDevice(cmd, &net->info) < 0)
             goto cleanup;
 
+        if (net->driver.virtio.rss == VIR_TRISTATE_SWITCH_ON
+                && virQEMUCapsGet(qemuCaps, QEMU_CAPS_VIRTIO_EBPF_RSS_FDS)) {
+            ebpfRSSnfds = qemuRSSeBPFHelper(virQEMUCapsGetEBPFHelperPath(qemuCaps), ebpfRSSfds, 16);
+            if (ebpfRSSnfds > 0) {
+                ebpfRSSfdsName = g_new0(char *, ebpfRSSnfds);
+                for (i = 0; i < ebpfRSSnfds; ++i) {
+                    ebpfRSSfdsName[i] = g_strdup_printf("%d", ebpfRSSfds[i]);
+                    virCommandPassFD(cmd, ebpfRSSfds[i], VIR_COMMAND_PASS_FD_CLOSE_PARENT);
+                }
+            }
+        }
+
         if (!(nic = qemuBuildNicDevStr(def, net, bootindex,
-                                       net->driver.virtio.queues, qemuCaps)))
+                                       net->driver.virtio.queues, ebpfRSSfdsName, ebpfRSSnfds, qemuCaps)))
             goto cleanup;
         virCommandAddArgList(cmd, "-device", nic, NULL);
     } else if (!requireNicdev) {
@@ -8846,6 +8873,13 @@ qemuBuildInterfaceCommandLine(virQEMUDriverPtr driver,
     }
     VIR_FREE(tapfdName);
     VIR_FREE(vhostfd);
+    for (i = 0; ret < 0 && ebpfRSSfds[i] && i < 16; i++) {
+        if (ret < 0)
+            VIR_FORCE_CLOSE(ebpfRSSfds[i]);
+        if (ebpfRSSfdsName)
+            VIR_FREE(ebpfRSSfdsName[i]);
+    }
+    VIR_FREE(ebpfRSSfdsName);
     VIR_FREE(tapfd);
     VIR_FORCE_CLOSE(vdpafd);
     return ret;
