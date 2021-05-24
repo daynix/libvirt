@@ -10816,6 +10816,8 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
     g_autofree char *vhostuser_type = NULL;
     g_autofree char *trustGuestRxFilters = NULL;
     g_autofree char *vhost_path = NULL;
+    g_autofree char *virtio_rss = NULL;
+    g_autofree char *virtio_rss_hash_report = NULL;
     const char *prefix = xmlopt ? xmlopt->config.netPrefix : NULL;
 
     if (!(def = virDomainNetDefNew(xmlopt)))
@@ -10984,7 +10986,8 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
                 queues = virXMLPropString(cur, "queues");
                 rx_queue_size = virXMLPropString(cur, "rx_queue_size");
                 tx_queue_size = virXMLPropString(cur, "tx_queue_size");
-
+                virtio_rss = virXMLPropString(cur, "rss");
+                virtio_rss_hash_report = virXMLPropString(cur, "rss_hash_report");
                 if (virDomainVirtioOptionsParseXML(cur, &def->virtio) < 0)
                     goto error;
             } else if (virXMLNodeNameEqual(cur, "filterref")) {
@@ -11410,7 +11413,24 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
             }
             def->driver.virtio.tx_queue_size = q;
         }
-
+        if (virtio_rss) {
+            if ((val = virTristateSwitchTypeFromString(virtio_rss)) <= 0) {
+                virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                        _("'rss' attribute must be 'on'/'off'/'default': %s"),
+                        str);
+                goto error;
+            }
+            def->driver.virtio.rss = val;
+        }
+        if (virtio_rss_hash_report) {
+            if ((val = virTristateSwitchTypeFromString(virtio_rss_hash_report)) <= 0) {
+                virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                        _("'rss_hash_report' attribute must be 'on'/'off'/'default': %s"),
+                        str);
+                goto error;
+            }
+            def->driver.virtio.rss_hash_report = val;
+        }
         if ((tmpNode = virXPathNode("./driver/host", ctxt))) {
             if ((str = virXMLPropString(tmpNode, "csum"))) {
                 if ((val = virTristateSwitchTypeFromString(str)) <= 0) {
@@ -26049,6 +26069,14 @@ virDomainVirtioNetDriverFormat(virBufferPtr buf,
     if (def->driver.virtio.tx_queue_size)
         virBufferAsprintf(buf, " tx_queue_size='%u'",
                           def->driver.virtio.tx_queue_size);
+    if (def->driver.virtio.rss != VIR_TRISTATE_SWITCH_ABSENT) {
+        virBufferAsprintf(buf, " rss='%s'",
+                          virTristateSwitchTypeToString(def->driver.virtio.rss));
+    }
+    if (def->driver.virtio.rss_hash_report != VIR_TRISTATE_SWITCH_ABSENT) {
+        virBufferAsprintf(buf, " rss_hash_report='%s'",
+                          virTristateSwitchTypeToString(def->driver.virtio.rss_hash_report));
+    }
 
     virDomainVirtioOptionsFormat(buf, def->virtio);
 }
