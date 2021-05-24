@@ -777,3 +777,51 @@ qemuInterfaceOpenVhostNet(virDomainDefPtr def,
 
     return -1;
 }
+
+
+int qemuRSSeBPFHelper(const char *helper, int *fds, int nfds) {
+    int ret = 0;
+    int unix_fds[2] = { -1, -1 };
+    virCommandPtr cmd = NULL;
+
+    if (!helper || !fds || !nfds) {
+        return -1;
+    }
+
+    ret = socketpair(AF_UNIX, SOCK_STREAM, 0, unix_fds);
+    if (ret) {
+        virReportSystemError(errno, "%s", _("failed to create socket"));
+        return -1;
+    }
+
+    cmd = virCommandNew(helper);
+    if (cmd == NULL) {
+        ret = -1;
+        goto exit;
+    }
+    virCommandAddArgFormat(cmd, "--fd=%d", unix_fds[1]);
+    virCommandPassFD(cmd, unix_fds[1], VIR_COMMAND_PASS_FD_CLOSE_PARENT);
+    virCommandClearCaps(cmd);
+#ifdef CAP_SYS_ADMIN
+    virCommandAllowCap(cmd, CAP_SYS_ADMIN);
+#endif
+
+    if (virCommandRunAsync(cmd, NULL) < 0) {
+        ret = -1;
+        goto exit;
+    }
+
+    ret = virSocketRecvMultipleFDs(unix_fds[0], fds, nfds, 0);
+
+    if (virCommandWait(cmd, NULL) < 0) {
+        int i = 0;
+        for (; i < ret; ++i) {
+            VIR_FORCE_CLOSE(fds[i]);
+        }
+        ret = -1;
+    }
+exit:
+    VIR_FORCE_CLOSE(unix_fds[0]);
+    virCommandFree(cmd);
+    return ret;
+}
