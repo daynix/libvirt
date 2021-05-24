@@ -606,6 +606,9 @@ typedef enum { /* virQEMUCapsFlags grouping marker for syntax-check */
     QEMU_CAPS_OBJECT_QAPIFIED, /* parameters for object-add are formally described */
     QEMU_CAPS_VIRTIO_RSS, /* virtio-net rss feature */
 
+    /* 400 */
+    QEMU_CAPS_VIRTIO_EBPF_RSS_FDS, /* virtio-net ebpf_rss_fds feature */
+
     QEMU_CAPS_LAST /* this must always be the last item */
 } virQEMUCapsFlags;
 
@@ -795,3 +798,7 @@ virQEMUCapsGetSEVCapabilities(virQEMUCapsPtr qemuCaps);
 
 virArch virQEMUCapsArchFromString(const char *arch);
 const char *virQEMUCapsArchToString(virArch arch);
+
+const char *
+virQEMUCapsGetEBPFHelperPath(virQEMUCapsPtr qemuCaps);
+
