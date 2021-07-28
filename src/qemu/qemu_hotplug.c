@@ -1205,6 +1205,9 @@ qemuDomainAttachNetDevice(virQEMUDriver *driver,
     g_autofree char *netdev_name = NULL;
     g_autoptr(virConnect) conn = NULL;
     virErrorPtr save_err = NULL;
+    char **ebpfRSSfdsName = NULL;
+    int ebpfRSSfds[16] = {};
+    int ebpfRSSnfds = 0;
 
     /* If appropriate, grab a physical device from the configured
      * network's pool of devices, or resolve bridge device name
@@ -1495,8 +1498,23 @@ qemuDomainAttachNetDevice(virQEMUDriver *driver,
     for (i = 0; i < vhostfdSize; i++)
         VIR_FORCE_CLOSE(vhostfd[i]);
 
+    if (net->driver.virtio.rss == VIR_TRISTATE_SWITCH_ON
+            && virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_VIRTIO_EBPF_RSS_FDS)) {
+        ebpfRSSnfds = qemuEbpfRssHelper(virQEMUCapsGetEBPFHelperPath(priv->qemuCaps), ebpfRSSfds, 16);
+        if (ebpfRSSnfds > 0) {
+            ebpfRSSfdsName = g_new0(char *, ebpfRSSnfds);
+            for (i = 0; i < ebpfRSSnfds; ++i) {
+                ebpfRSSfdsName[i] = g_strdup_printf("ebpfrssfd-%s%zu", net->info.alias, i);
+                if (qemuMonitorSendFileHandle(priv->mon, NULL, ebpfRSSfds[i])) {
+                    ebpfRSSnfds = 0;
+                    break;
+                }
+            }
+        }
+    }
+
     if (!(nicstr = qemuBuildNicDevStr(vm->def, net, 0,
-                                      queueSize, priv->qemuCaps)))
+                                      queueSize, ebpfRSSfdsName, ebpfRSSnfds, priv->qemuCaps)))
         goto try_remove;
 
     qemuDomainObjEnterMonitor(driver, vm);
@@ -1599,6 +1617,12 @@ qemuDomainAttachNetDevice(virQEMUDriver *driver,
     }
     VIR_FREE(vhostfd);
     VIR_FREE(vhostfdName);
+    for (i = 0; ret < 0 && ebpfRSSfds[i] && i < 16; i++) {
+        VIR_FORCE_CLOSE(ebpfRSSfds[i]);
+        if (ebpfRSSfdsName)
+            VIR_FREE(ebpfRSSfdsName[i]);
+    }
+    VIR_FREE(ebpfRSSfdsName);
     virDomainCCWAddressSetFree(ccwaddrs);
     VIR_FORCE_CLOSE(slirpfd);
     VIR_FORCE_CLOSE(vdpafd);
@@ -3624,7 +3648,9 @@ qemuDomainChangeNet(virQEMUDriver *driver,
          olddev->driver.virtio.guest.tso4 != newdev->driver.virtio.guest.tso4 ||
          olddev->driver.virtio.guest.tso6 != newdev->driver.virtio.guest.tso6 ||
          olddev->driver.virtio.guest.ecn != newdev->driver.virtio.guest.ecn ||
-         olddev->driver.virtio.guest.ufo != newdev->driver.virtio.guest.ufo)) {
+         olddev->driver.virtio.guest.ufo != newdev->driver.virtio.guest.ufo ||
+         olddev->driver.virtio.rss != newdev->driver.virtio.rss ||
+         olddev->driver.virtio.rss_hash_report != newdev->driver.virtio.rss_hash_report)) {
         virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
                        _("cannot modify virtio network device driver attributes"));
         goto cleanup;
