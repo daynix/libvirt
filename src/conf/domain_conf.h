@@ -1046,6 +1046,8 @@ struct _virDomainNetDef {
                 virTristateSwitch ecn;
                 virTristateSwitch ufo;
             } guest;
+            virTristateSwitch rss;
+            virTristateSwitch rss_hash_report;
         } virtio;
     } driver;
     struct {
