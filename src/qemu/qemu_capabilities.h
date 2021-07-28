@@ -816,3 +816,6 @@ virQEMUCapsGetKVMSupportsSecureGuest(virQEMUCaps *qemuCaps) G_GNUC_NO_INLINE;
 
 virArch virQEMUCapsArchFromString(const char *arch);
 const char *virQEMUCapsArchToString(virArch arch);
+
+const char *
+virQEMUCapsGetEBPFHelperPath(virQEMUCaps *qemuCaps);

@@ -722,6 +722,9 @@ struct _virQEMUCaps {
     /* Capabilities which may differ depending on the accelerator. */
     virQEMUCapsAccel kvm;
     virQEMUCapsAccel tcg;
+
+    /* Helpers returned by qemu */
+    char *helperEbpfRSS;
 };
 
 struct virQEMUCapsSearchData {
@@ -1994,6 +1997,8 @@ virQEMUCaps *virQEMUCapsNewCopy(virQEMUCaps *qemuCaps)
                                qemuCaps->sevCapabilities) < 0)
         goto error;
 
+    ret->helperEbpfRSS = g_strdup(qemuCaps->helperEbpfRSS);
+
     return ret;
 
  error:
@@ -2037,6 +2042,8 @@ void virQEMUCapsDispose(void *obj)
 
     virQEMUCapsAccelClear(&qemuCaps->kvm);
     virQEMUCapsAccelClear(&qemuCaps->tcg);
+
+    g_free(qemuCaps->helperEbpfRSS);
 }
 
 void
@@ -4418,6 +4425,8 @@ virQEMUCapsLoadCache(virArch hostArch,
     if (virXPathBoolean("boolean(./kvmSupportsSecureGuest)", ctxt) > 0)
         qemuCaps->kvmSupportsSecureGuest = true;
 
+    qemuCaps->helperEbpfRSS = virXPathString("string(./EbpfHelperPath)", ctxt);
+
     if (skipInvalidation)
         qemuCaps->invalidation = false;
 
@@ -4670,6 +4679,10 @@ virQEMUCapsFormatCache(virQEMUCaps *qemuCaps)
 
     if (qemuCaps->kvmSupportsSecureGuest)
         virBufferAddLit(&buf, "<kvmSupportsSecureGuest/>\n");
+
+    if (qemuCaps->helperEbpfRSS) {
+        virBufferAsprintf(&buf, "<EbpfHelperPath>%s</EbpfHelperPath>\n", qemuCaps->helperEbpfRSS);
+    }
 
     virBufferAdjustIndent(&buf, -2);
     virBufferAddLit(&buf, "</qemuCaps>\n");
@@ -5265,6 +5278,30 @@ virQEMUCapsGetVirtType(virQEMUCaps *qemuCaps)
     return type;
 }
 
+static int
+virQEMUCapsProbeQMPHelperPath(virQEMUCaps *qemuCaps,
+                          qemuMonitor *mon)
+{
+    g_autoptr(GHashTable) helperList = NULL;
+    const char *entry = NULL;
+
+    helperList = qemuMonitorGetHelperPath(mon);
+
+    if (!helperList) {
+        return -1;
+    }
+
+    /* TODO: parse all helpers? */
+    entry = virHashLookup(helperList, "qemu-ebpf-rss-helper");
+    if (!entry) {
+        return -1;
+    }
+
+    qemuCaps->helperEbpfRSS = g_strdup(entry);
+
+    return 0;
+}
+
 int
 virQEMUCapsInitQMPMonitor(virQEMUCaps *qemuCaps,
                           qemuMonitor *mon)
@@ -5344,6 +5381,8 @@ virQEMUCapsInitQMPMonitor(virQEMUCaps *qemuCaps,
 
     if (virQEMUCapsProbeQMPHostCPU(qemuCaps, accel, mon, type) < 0)
         return -1;
+
+    virQEMUCapsProbeQMPHelperPath(qemuCaps, mon);
 
     return 0;
 }
@@ -6458,4 +6497,9 @@ virQEMUCapsStripMachineAliases(virQEMUCaps *qemuCaps)
 {
     virQEMUCapsStripMachineAliasesForVirtType(qemuCaps, VIR_DOMAIN_VIRT_KVM);
     virQEMUCapsStripMachineAliasesForVirtType(qemuCaps, VIR_DOMAIN_VIRT_QEMU);
+}
+
+const char *virQEMUCapsGetEBPFHelperPath(virQEMUCaps *qemuCaps)
+{
+    return qemuCaps->helperEbpfRSS;
 }
