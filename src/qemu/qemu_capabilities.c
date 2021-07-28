@@ -638,6 +638,7 @@ VIR_ENUM_IMPL(virQEMUCaps,
               "query-display-options",
               "s390-pv-guest",
               "virtio-net.rss",
+              "virtio-net.ebpf_rss_fds",
     );
 
 
@@ -1423,6 +1424,7 @@ static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsVirtioNet[] = {
     { "packed", QEMU_CAPS_VIRTIO_PACKED_QUEUES, NULL },
     { "acpi-index", QEMU_CAPS_ACPI_INDEX, NULL },
     { "rss", QEMU_CAPS_VIRTIO_RSS, NULL },
+    { "ebpf_rss_fds", QEMU_CAPS_VIRTIO_EBPF_RSS_FDS, NULL },
 };
 
 static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsPCIeRootPort[] = {
