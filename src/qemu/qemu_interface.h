@@ -61,3 +61,5 @@ int qemuInterfacePrepareSlirp(virQEMUDriver *driver,
                               qemuSlirp **slirp);
 
 int qemuInterfaceVDPAConnect(virDomainNetDef *net) G_GNUC_NO_INLINE;
+
+int qemuEbpfRssHelper(const char *helper, int *fds, int nfds);
