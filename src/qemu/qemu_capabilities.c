@@ -637,6 +637,7 @@ VIR_ENUM_IMPL(virQEMUCaps,
               "confidential-guest-support",
               "query-display-options",
               "s390-pv-guest",
+              "virtio-net.rss",
     );
 
 
@@ -1421,6 +1422,7 @@ static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsVirtioNet[] = {
     { "failover", QEMU_CAPS_VIRTIO_NET_FAILOVER, NULL },
     { "packed", QEMU_CAPS_VIRTIO_PACKED_QUEUES, NULL },
     { "acpi-index", QEMU_CAPS_ACPI_INDEX, NULL },
+    { "rss", QEMU_CAPS_VIRTIO_RSS, NULL },
 };
 
 static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsPCIeRootPort[] = {
