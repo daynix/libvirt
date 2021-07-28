@@ -107,6 +107,8 @@ char *qemuBuildNicDevStr(virDomainDef *def,
                          virDomainNetDef *net,
                          unsigned int bootindex,
                          size_t vhostfdSize,
+                         char **ebpf_rss_fds,
+                         size_t nfds,
                          virQEMUCaps *qemuCaps);
 
 char *qemuDeviceDriveHostAlias(virDomainDiskDef *disk);
