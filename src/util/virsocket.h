@@ -22,6 +22,8 @@
 
 int virSocketSendFD(int sock, int fd);
 int virSocketRecvFD(int sock, int fdflags);
+int
+virSocketRecvMultipleFDs(int sock, int *fds, size_t nfds, int fdflags);
 
 #ifdef WIN32
 
