@@ -418,22 +418,27 @@ virSocketSendFD(int sock, int fd)
 }
 
 
-/* virSocketRecvFD receives a file descriptor through the socket.
+
+/* virSocketRecvMultipleFDs receives few file descriptors through the socket.
    The flags are a bitmask, possibly including O_CLOEXEC (defined in <fcntl.h>).
 
-   Return the fd on success, or -1 with errno set in case of error.
+   Return the number of recived file descriptors on success,
+   or -1 with errno set in case of error.
 */
 int
-virSocketRecvFD(int sock, int fdflags)
+virSocketRecvMultipleFDs(int sock, int *fds, size_t nfds, int fdflags)
 {
     char byte = 0;
     struct iovec iov;
     struct msghdr msg;
-    int fd = -1;
+    int ret = -1;
     ssize_t len;
     struct cmsghdr *cmsg;
-    char buf[CMSG_SPACE(sizeof(fd))];
+    char buf[CMSG_SPACE(sizeof(int) * nfds)];
     int fdflags_recvmsg = fdflags & O_CLOEXEC ? MSG_CMSG_CLOEXEC : 0;
+    int fdSize = -1;
+    int i = 0;
+    int saved_errno = 0;
 
     if ((fdflags & ~O_CLOEXEC) != 0) {
         errno = EINVAL;
@@ -451,13 +456,6 @@ virSocketRecvFD(int sock, int fdflags)
 
     msg.msg_control = buf;
     msg.msg_controllen = sizeof(buf);
-    cmsg = CMSG_FIRSTHDR(&msg);
-    cmsg->cmsg_level = SOL_SOCKET;
-    cmsg->cmsg_type = SCM_RIGHTS;
-    cmsg->cmsg_len = CMSG_LEN(sizeof(fd));
-    /* Initialize the payload: */
-    memcpy(CMSG_DATA(cmsg), &fd, sizeof(fd));
-    msg.msg_controllen = CMSG_SPACE(sizeof(fd));
 
     len = recvmsg(sock, &msg, fdflags_recvmsg);
     if (len < 0)
@@ -465,28 +463,59 @@ virSocketRecvFD(int sock, int fdflags)
 
     cmsg = CMSG_FIRSTHDR(&msg);
     /* be paranoiac */
-    if (len == 0 || cmsg == NULL || cmsg->cmsg_len != CMSG_LEN(sizeof(fd))
+    if (len == 0 || cmsg == NULL || cmsg->cmsg_len < CMSG_LEN(sizeof(int))
         || cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS) {
         /* fake errno: at end the file is not available */
         errno = len ? EACCES : ENOTCONN;
         return -1;
     }
 
-    memcpy(&fd, CMSG_DATA(cmsg), sizeof(fd));
+    fdSize = cmsg->cmsg_len - CMSG_LEN(0);
+    memcpy(fds, CMSG_DATA(cmsg), fdSize);
+    ret = fdSize/sizeof(int);
 
     /* set close-on-exec flag */
     if (!MSG_CMSG_CLOEXEC && (fdflags & O_CLOEXEC)) {
-        if (virSetCloseExec(fd) < 0) {
-            VIR_FORCE_CLOSE(fd);
-            return -1;
+        for (i = 0; i < ret; ++i) {
+            if (virSetCloseExec(fds[i]) < 0) {
+                saved_errno = errno;
+                goto error;
+            }
         }
     }
 
-    return fd;
+    return ret;
+error:
+    for (i = 0; i < ret; ++i) {
+        VIR_FORCE_CLOSE(fds[i]);
+    }
+    errno = saved_errno;
+    return -1;
+}
+
+/* virSocketRecvFD receives a file descriptor through the socket.
+   The flags are a bitmask, possibly including O_CLOEXEC (defined in <fcntl.h>).
+
+   Return the fd on success, or -1 with errno set in case of error.
+*/
+int
+virSocketRecvFD(int sock, int fdflags)
+{
+    int ret = -1;
+    int err = virSocketRecvMultipleFDs(sock, &ret, 1, fdflags);
+
+    return err < 0 ? err : ret;
 }
 #else /* WIN32 */
 int
 virSocketSendFD(int sock G_GNUC_UNUSED, int fd G_GNUC_UNUSED)
+{
+    errno = ENOSYS;
+    return -1;
+}
+
+int
+virSocketRecvMultipleFDs(int sock, int *fds, size_t nfds, int fdflags)
 {
     errno = ENOSYS;
     return -1;

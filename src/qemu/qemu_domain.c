@@ -1082,6 +1082,7 @@ qemuDomainNetworkPrivateClearFDs(qemuDomainNetworkPrivate *priv)
     g_clear_pointer(&priv->vdpafd, qemuFDPassFree);
     g_slist_free_full(g_steal_pointer(&priv->vhostfds), (GDestroyNotify) qemuFDPassDirectFree);
     g_slist_free_full(g_steal_pointer(&priv->tapfds), (GDestroyNotify) qemuFDPassDirectFree);
+    g_slist_free_full(g_steal_pointer(&priv->ebpfrssfds), (GDestroyNotify) qemuFDPassDirectFree);
 }
 
 

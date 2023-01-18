@@ -8857,3 +8857,25 @@ qemuMonitorJSONQueryStats(qemuMonitor *mon,
 
     return virJSONValueObjectStealArray(reply, "return");
 }
+
+virJSONValue *
+qemuMonitorJSONGetEbpfRssHelperPath(qemuMonitor *mon)
+{
+    g_autoptr(virJSONValue) cmd = NULL;
+    g_autoptr(virJSONValue) reply = NULL;
+
+    if (!(cmd = qemuMonitorJSONMakeCommand("find-ebpf-helper", NULL)))
+        return NULL;
+
+    if (qemuMonitorJSONCommand(mon, cmd, &reply) < 0)
+        return NULL;
+
+    /* return empty hash */
+    if (qemuMonitorJSONHasError(reply, "CommandNotFound"))
+        return NULL;
+
+    if (qemuMonitorJSONCheckReply(cmd, reply, VIR_JSON_TYPE_ARRAY) < 0)
+        return NULL;
+
+    return virJSONValueObjectStealObject(reply, "return");
+}

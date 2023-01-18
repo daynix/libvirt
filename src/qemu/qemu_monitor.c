@@ -4491,3 +4491,11 @@ qemuMonitorGetStatsByQOMPath(virJSONValue *arr,
 
     return NULL;
 }
+
+virJSONValue *
+qemuMonitorGetEbpfRssHelperPath(qemuMonitor *mon)
+{
+    QEMU_CHECK_MONITOR_NULL(mon);
+
+    return qemuMonitorJSONGetEbpfRssHelperPath(mon);
+}

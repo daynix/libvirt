@@ -679,6 +679,7 @@ VIR_ENUM_IMPL(virQEMUCaps,
               "query-stats-schemas", /* QEMU_CAPS_QUERY_STATS_SCHEMAS */
               "sgx-epc", /* QEMU_CAPS_SGX_EPC */
               "thread-context", /* QEMU_CAPS_THREAD_CONTEXT */
+              "virtio-net.ebpf_rss_fds", /* QEMU_CAPS_VIRTIO_NET_EBPF_RSS_FDS */
     );
 
 
@@ -766,6 +767,9 @@ struct _virQEMUCaps {
     virQEMUCapsAccel kvm;
     virQEMUCapsAccel hvf;
     virQEMUCapsAccel tcg;
+    
+    /* eBPF RSS helper returned by Qemu */
+    char *helperEbpfRSS;
 };
 
 struct virQEMUCapsSearchData {
@@ -810,6 +814,12 @@ const char *virQEMUCapsArchToString(virArch arch)
         return "or32";
 
     return virArchToString(arch);
+}
+
+
+const char *virQEMUCapsGetEBPFHelperPath(virQEMUCaps *qemuCaps)
+{
+    return qemuCaps->helperEbpfRSS;
 }
 
 
@@ -1428,6 +1438,7 @@ static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsVirtioBlk[] = {
 static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsVirtioNet[] = {
     { "acpi-index", QEMU_CAPS_ACPI_INDEX, NULL },
     { "rss", QEMU_CAPS_VIRTIO_NET_RSS, NULL },
+    { "ebpf_rss_fds", QEMU_CAPS_VIRTIO_NET_EBPF_RSS_FDS, NULL },
 };
 
 static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsPCIeRootPort[] = {
@@ -2014,6 +2025,8 @@ virQEMUCaps *virQEMUCapsNewCopy(virQEMUCaps *qemuCaps)
                                qemuCaps->sgxCapabilities) < 0)
         return NULL;
 
+    ret->helperEbpfRSS = g_strdup(qemuCaps->helperEbpfRSS);
+
     return g_steal_pointer(&ret);
 }
 
@@ -2057,6 +2070,8 @@ void virQEMUCapsDispose(void *obj)
     virQEMUCapsAccelClear(&qemuCaps->kvm);
     virQEMUCapsAccelClear(&qemuCaps->hvf);
     virQEMUCapsAccelClear(&qemuCaps->tcg);
+
+    g_free(qemuCaps->helperEbpfRSS);
 }
 
 void
@@ -4636,6 +4651,8 @@ virQEMUCapsLoadCache(virArch hostArch,
     if (virXPathBoolean("boolean(./kvmSupportsSecureGuest)", ctxt) > 0)
         qemuCaps->kvmSupportsSecureGuest = true;
 
+    qemuCaps->helperEbpfRSS = virXPathString("string(./EbpfHelperPath)", ctxt);
+
     if (skipInvalidation)
         qemuCaps->invalidation = false;
 
@@ -4933,6 +4950,10 @@ virQEMUCapsFormatCache(virQEMUCaps *qemuCaps)
 
     if (qemuCaps->kvmSupportsSecureGuest)
         virBufferAddLit(&buf, "<kvmSupportsSecureGuest/>\n");
+
+    if (qemuCaps->helperEbpfRSS) {
+        virBufferAsprintf(&buf, "<EbpfHelperPath>%s</EbpfHelperPath>\n", qemuCaps->helperEbpfRSS);
+    }
 
     virBufferAdjustIndent(&buf, -2);
     virBufferAddLit(&buf, "</qemuCaps>\n");
@@ -5464,6 +5485,23 @@ virQEMUCapsProbeQMPSchemaCapabilities(virQEMUCaps *qemuCaps,
     return 0;
 }
 
+static int
+virQEMUCapsProbeQMPEbpfRssHelperPath(virQEMUCaps *qemuCaps,
+                          qemuMonitor *mon)
+{
+    g_autoptr(virJSONValue) helper = NULL;
+
+    helper = qemuMonitorGetEbpfRssHelperPath(mon);
+
+    if (!helper) {
+        return -1;
+    }
+
+    qemuCaps->helperEbpfRSS = g_strdup(virJSONValueGetString(helper));
+
+    return 0;
+}
+
 #define QEMU_MIN_MAJOR 4
 #define QEMU_MIN_MINOR 2
 #define QEMU_MIN_MICRO 0
@@ -5564,6 +5602,8 @@ virQEMUCapsInitQMPMonitor(virQEMUCaps *qemuCaps,
 
     /* The following probes rely on other previously probed capabilities.
      * No capabilities bits should be set below this point. */
+
+    virQEMUCapsProbeQMPEbpfRssHelperPath(qemuCaps, mon);
 
     if (virQEMUCapsProbeQMPHostCPU(qemuCaps, accel, mon, type) < 0)
         return -1;
@@ -5734,6 +5774,8 @@ virQEMUCapsNewForBinaryInternal(virArch hostArch,
 
         qemuCaps->kvmSupportsSecureGuest = virQEMUCapsKVMSupportsSecureGuest();
     }
+
+    qemuCaps->helperEbpfRSS = NULL;
 
     return g_steal_pointer(&qemuCaps);
 }

@@ -416,6 +416,8 @@ struct _qemuDomainNetworkPrivate {
     GSList *tapfds; /* qemuFDPassDirect */
     GSList *vhostfds; /* qemuFDPassDirect */
     qemuFDPass *vdpafd;
+    
+    GSList *ebpfrssfds; /* qemuFDPassDirect eBPF RSS fds from helper */
 };
 
 
