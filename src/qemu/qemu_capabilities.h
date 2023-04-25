@@ -672,6 +672,7 @@ typedef enum { /* virQEMUCapsFlags grouping marker for syntax-check */
     QEMU_CAPS_VIRTIO_GPU_BLOB, /* -device virtio-gpu-*.blob= */
     QEMU_CAPS_RBD_ENCRYPTION_LAYERING, /* layered encryption support for Ceph RBD */
     QEMU_CAPS_RBD_ENCRYPTION_LUKS_ANY, /* luks-any (LUKS and LUKS2) encryption format for Ceph RBD */
+    QEMU_CAPS_VIRTIO_NET_EBPF_RSS_FDS, /* virtio-net ebpf_rss_fds feature */
 
     QEMU_CAPS_LAST /* this must always be the last item */
 } virQEMUCapsFlags;
@@ -891,3 +892,6 @@ virQEMUCapsProbeHVF(virQEMUCaps *qemuCaps) G_NO_INLINE;
 
 virArch virQEMUCapsArchFromString(const char *arch);
 const char *virQEMUCapsArchToString(virArch arch);
+
+const void *
+virQEMUCapsGetEbpfRSS(virQEMUCaps *qemuCaps, size_t *size);

@@ -693,6 +693,7 @@ VIR_ENUM_IMPL(virQEMUCaps,
               "virtio-gpu.blob", /* QEMU_CAPS_VIRTIO_GPU_BLOB */
               "rbd-encryption-layering", /* QEMU_CAPS_RBD_ENCRYPTION_LAYERING */
               "rbd-encryption-luks-any", /* QEMU_CAPS_RBD_ENCRYPTION_LUKS_ANY */
+              "virtio-net.ebpf_rss_fds", /* QEMU_CAPS_VIRTIO_NET_EBPF_RSS_FDS */
     );
 
 
@@ -782,6 +783,10 @@ struct _virQEMUCaps {
     virQEMUCapsAccel kvm;
     virQEMUCapsAccel hvf;
     virQEMUCapsAccel tcg;
+
+    /* eBPF ELF object blob for VirtioNet RSS */
+    void *ebpfRSSObject;
+    size_t ebpfRSSObjectSize;
 };
 
 struct virQEMUCapsSearchData {
@@ -826,6 +831,17 @@ const char *virQEMUCapsArchToString(virArch arch)
         return "or32";
 
     return virArchToString(arch);
+}
+
+
+const void *
+virQEMUCapsGetEbpfRSS(virQEMUCaps *qemuCaps, size_t *size)
+{
+    if (size == NULL) {
+        return NULL;
+    }
+    *size = qemuCaps->ebpfRSSObjectSize;
+    return qemuCaps->ebpfRSSObject;
 }
 
 
@@ -1421,6 +1437,7 @@ static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsVirtioBlk[] = {
 static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsVirtioNet[] = {
     { "acpi-index", QEMU_CAPS_ACPI_INDEX, NULL },
     { "rss", QEMU_CAPS_VIRTIO_NET_RSS, NULL },
+    { "ebpf_rss_fds", QEMU_CAPS_VIRTIO_NET_EBPF_RSS_FDS, NULL },
 };
 
 static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsPCIeRootPort[] = {
@@ -1985,6 +2002,10 @@ virQEMUCaps *virQEMUCapsNewCopy(virQEMUCaps *qemuCaps)
     ret->hypervCapabilities = g_memdup(qemuCaps->hypervCapabilities,
                                        sizeof(virDomainCapsFeatureHyperv));
 
+    ret->ebpfRSSObject = g_memdup(qemuCaps->ebpfRSSObject,
+                                  qemuCaps->ebpfRSSObjectSize);
+    ret->ebpfRSSObjectSize = qemuCaps->ebpfRSSObjectSize;
+
     return g_steal_pointer(&ret);
 }
 
@@ -2026,6 +2047,7 @@ void virQEMUCapsDispose(void *obj)
     virSGXCapabilitiesFree(qemuCaps->sgxCapabilities);
 
     g_free(qemuCaps->hypervCapabilities);
+    g_free(qemuCaps->ebpfRSSObject);
 
     virQEMUCapsAccelClear(&qemuCaps->kvm);
     virQEMUCapsAccelClear(&qemuCaps->hvf);
@@ -5510,6 +5532,23 @@ virQEMUCapsProbeQMPSchemaCapabilities(virQEMUCaps *qemuCaps,
     return 0;
 }
 
+static int
+virQEMUCapsProbeQMPEbpfObjects(virQEMUCaps *qemuCaps,
+                          qemuMonitor *mon)
+{
+    void *ebpfObject = NULL;
+    size_t size = 0;
+
+    ebpfObject = qemuMonitorGetEbpf(mon, "rss", &size);
+    if(ebpfObject == NULL)
+        return -1;
+
+    qemuCaps->ebpfRSSObject = ebpfObject;
+    qemuCaps->ebpfRSSObjectSize = size;
+
+    return 0;
+}
+
 #define QEMU_MIN_MAJOR 4
 #define QEMU_MIN_MINOR 2
 #define QEMU_MIN_MICRO 0
@@ -5611,6 +5650,9 @@ virQEMUCapsInitQMPMonitor(virQEMUCaps *qemuCaps,
 
     if (virQEMUCapsProbeQMPHostCPU(qemuCaps, accel, mon, type) < 0)
         return -1;
+
+    fprintf(stderr, "About to get RSS binary!\n");
+    virQEMUCapsProbeQMPEbpfObjects(qemuCaps, mon);
 
     return 0;
 }

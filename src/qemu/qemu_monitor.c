@@ -25,6 +25,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <gio/gio.h>
+#include <glib-2.0/glib/gbase64.h>
 
 #include "qemu_alias.h"
 #include "qemu_monitor.h"
@@ -4517,4 +4518,28 @@ qemuMonitorGetStatsByQOMPath(virJSONValue *arr,
     }
 
     return NULL;
+}
+
+void *
+qemuMonitorGetEbpf(qemuMonitor *mon, const char *ebpfName, size_t *size)
+{
+    QEMU_CHECK_MONITOR_NULL(mon);
+    virJSONValue *reply = NULL;
+    const char *ebpfBase64 = NULL;
+    void *ebpfObject = NULL;
+
+    if (ebpfName == NULL || size == NULL)
+        return NULL;
+
+    reply = qemuMonitorJSONGetEbpf(mon, ebpfName);
+
+    if (reply == NULL)
+        return NULL;
+
+    ebpfBase64 = virJSONValueGetString(reply);
+
+    ebpfObject = g_base64_decode(ebpfBase64, size);
+    virJSONValueFree(reply);
+
+    return ebpfObject;
 }

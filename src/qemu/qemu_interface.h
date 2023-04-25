@@ -57,3 +57,5 @@ int qemuInterfacePrepareSlirp(virQEMUDriver *driver,
                               virDomainNetDef *net);
 
 int qemuInterfaceVDPAConnect(virDomainNetDef *net) G_NO_INLINE;
+
+int qemuInterfaceLoadEbpf(const void *ebpfObject, size_t ebpfSize, int *fds, int nfds);

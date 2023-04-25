@@ -36,6 +36,7 @@
 
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <bpf/libbpf.h>
 
 #define VIR_FROM_THIS VIR_FROM_QEMU
 
@@ -773,5 +774,40 @@ qemuInterfaceOpenVhostNet(virDomainObj *vm,
 
     netpriv->vhostfds = g_slist_reverse(netpriv->vhostfds);
     virDomainAuditNetDevice(vm->def, net, vhostnet_path, vhostfdSize);
+    return 0;
+}
+
+
+int qemuInterfaceLoadEbpf(const void *ebpfObject, size_t ebpfSize, int *fds, int nfds) {
+    int err = 0;
+    int i = 0;
+
+    if (ebpfObject == NULL || ebpfSize == NULL || fds == NULL)
+        return -1;
+
+    struct bpf_object *obj = bpf_object__open_mem(ebpfObject, ebpfSize, NULL);
+    err = libbpf_get_error(obj);
+    if(err) {
+        return -1;
+    }
+
+    struct bpf_program *prog;
+    struct bpf_map *map;
+
+    err = bpf_object__load(obj);
+    if (err) {
+        return -1;
+    }
+    
+    bpf_object__for_each_program(prog, obj) {
+        fds[i] = bpf_program__fd(prog);
+        ++i;
+    }
+
+    bpf_object__for_each_map(map, obj) {
+        fds[i] = bpf_map__fd(map);
+        ++i;
+    }
+
     return 0;
 }
