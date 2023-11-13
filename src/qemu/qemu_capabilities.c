@@ -698,6 +698,7 @@ VIR_ENUM_IMPL(virQEMUCaps,
               /* 450 */
               "run-with.async-teardown", /* QEMU_CAPS_RUN_WITH_ASYNC_TEARDOWN */
               "virtio-blk-vhost-vdpa", /* QEMU_CAPS_DEVICE_VIRTIO_BLK_VHOST_VDPA */
+              "virtio-net.ebpf_rss_fds", /* QEMU_CAPS_VIRTIO_NET_EBPF_RSS_FDS */
     );
 
 
@@ -1437,6 +1438,7 @@ static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsVirtioBlk[] = {
 static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsVirtioNet[] = {
     { "acpi-index", QEMU_CAPS_ACPI_INDEX, NULL },
     { "rss", QEMU_CAPS_VIRTIO_NET_RSS, NULL },
+    { "ebpf_rss_fds", QEMU_CAPS_VIRTIO_NET_EBPF_RSS_FDS, NULL },
 };
 
 static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsPCIeRootPort[] = {

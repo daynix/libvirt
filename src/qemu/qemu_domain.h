@@ -432,6 +432,9 @@ struct _qemuDomainNetworkPrivate {
     GSList *tapfds; /* qemuFDPassDirect */
     GSList *vhostfds; /* qemuFDPassDirect */
     qemuFDPass *vdpafd;
+
+    void *libbpfRSSObject;
+    GSList *ebpfrssfds; /* qemuFDPassDirect eBPF RSS fds from helper */
 };
 
 
