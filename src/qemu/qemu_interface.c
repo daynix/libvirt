@@ -37,6 +37,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#ifdef WITH_BPF
+#include <bpf/libbpf.h>
+#endif
+
 #define VIR_FROM_THIS VIR_FROM_QEMU
 
 VIR_LOG_INIT("qemu.qemu_interface");
@@ -763,3 +767,82 @@ qemuInterfaceOpenVhostNet(virDomainObj *vm,
     virDomainAuditNetDevice(vm->def, net, vhostnet_path, vhostfdSize);
     return 0;
 }
+
+#ifdef WITH_BPF
+
+int
+qemuInterfaceLoadEbpf(const char *ebpfObject, void **retLibbpfObj, int *fds, size_t nfds)
+{
+    int err = 0;
+    size_t i = 0;
+    struct bpf_program *prog;
+    struct bpf_map *map;
+    struct bpf_object *obj;
+    size_t ebpfSize = 0;
+    g_autofree void *ebpfRawData = NULL;
+
+    ebpfRawData = g_base64_decode(ebpfObject, &ebpfSize);
+    if (ebpfRawData == NULL) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("can't decode the eBPF from base64"));
+        return -1;
+    }
+
+    obj = bpf_object__open_mem(ebpfRawData, ebpfSize, NULL);
+    err = libbpf_get_error(obj);
+    if (err) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("can't open eBPF object"));
+        return -1;
+    }
+
+
+    err = bpf_object__load(obj);
+    if (err) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("can't load eBPF object"));
+        return -1;
+    }
+
+    bpf_object__for_each_program(prog, obj) {
+        fds[i] = bpf_program__fd(prog);
+        ++i;
+        if (i > nfds) {
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("to much file descriptors in eBPF"));
+            return -1;
+        }
+    }
+
+    bpf_object__for_each_map(map, obj) {
+        fds[i] = bpf_map__fd(map);
+        ++i;
+        if (i > nfds) {
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("to much file descriptors in eBPF"));
+            return -1;
+        }
+    }
+
+    *retLibbpfObj = obj;
+
+    return i;
+}
+
+
+void
+qemuInterfaceCloseEbpf(void *libbpfObj)
+{
+    if (libbpfObj)
+        bpf_object__close(libbpfObj);
+}
+#else
+
+int
+qemuInterfaceLoadEbpf(const char *ebpfObject G_GNUC_UNUSED, void **retLibbpfObj G_GNUC_UNUSED,
+                      int *fds G_GNUC_UNUSED, size_t nfds G_GNUC_UNUSED)
+{
+    return -1;
+}
+
+void
+qemuInterfaceCloseEbpf(void *libbpfObj G_GNUC_UNUSED)
+{
+}
+
+#endif
