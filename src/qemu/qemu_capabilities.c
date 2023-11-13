@@ -789,6 +789,9 @@ struct _virQEMUCaps {
     virQEMUCapsAccel kvm;
     virQEMUCapsAccel hvf;
     virQEMUCapsAccel tcg;
+
+    /* Hash of ebpf objects encoded in base64 */
+    GHashTable *ebpfObjects;
 };
 
 struct virQEMUCapsSearchData {
@@ -833,6 +836,13 @@ const char *virQEMUCapsArchToString(virArch arch)
         return "or32";
 
     return virArchToString(arch);
+}
+
+
+const char *
+virQEMUCapsGetEbpf(virQEMUCaps *qemuCaps, const char *id)
+{
+    return virHashLookup(qemuCaps->ebpfObjects, id);
 }
 
 
@@ -1805,6 +1815,8 @@ virQEMUCapsNew(void)
     qemuCaps->invalidation = true;
     qemuCaps->flags = virBitmapNew(QEMU_CAPS_LAST);
 
+    qemuCaps->ebpfObjects = virHashNew(g_free);
+
     return qemuCaps;
 }
 
@@ -1947,6 +1959,9 @@ virQEMUCaps *virQEMUCapsNewCopy(virQEMUCaps *qemuCaps)
 {
     g_autoptr(virQEMUCaps) ret = virQEMUCapsNewBinary(qemuCaps->binary);
     size_t i;
+    GHashTableIter iter;
+    const char *key;
+    const char *value;
 
     ret->invalidation = qemuCaps->invalidation;
     ret->kvmSupportsNesting = qemuCaps->kvmSupportsNesting;
@@ -1984,6 +1999,12 @@ virQEMUCaps *virQEMUCapsNewCopy(virQEMUCaps *qemuCaps)
 
     ret->hypervCapabilities = g_memdup(qemuCaps->hypervCapabilities,
                                        sizeof(virDomainCapsFeatureHyperv));
+
+    ret->ebpfObjects = virHashNew(g_free);
+    g_hash_table_iter_init(&iter, qemuCaps->ebpfObjects);
+    while (g_hash_table_iter_next(&iter, (gpointer *) &key, (gpointer *) &value)) {
+        g_hash_table_insert(ret->ebpfObjects, g_strdup(key), g_strdup(value));
+    }
 
     return g_steal_pointer(&ret);
 }
@@ -2026,6 +2047,8 @@ void virQEMUCapsDispose(void *obj)
     virSGXCapabilitiesFree(qemuCaps->sgxCapabilities);
 
     g_free(qemuCaps->hypervCapabilities);
+
+    g_hash_table_destroy(qemuCaps->ebpfObjects);
 
     virQEMUCapsAccelClear(&qemuCaps->kvm);
     virQEMUCapsAccelClear(&qemuCaps->hvf);
@@ -4542,6 +4565,37 @@ virQEMUCapsValidateArch(virQEMUCaps *qemuCaps, xmlXPathContextPtr ctxt)
 }
 
 
+static int
+virQEMUCapsParseEbpfObjects(virQEMUCaps *qemuCaps, xmlXPathContextPtr ctxt)
+{
+    g_autofree xmlNodePtr *nodes = NULL;
+    size_t i;
+    int n;
+
+    if ((n = virXPathNodeSet("./ebpf/object", ctxt, &nodes)) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("failed to parse qemu cached eBPF object"));
+        return -1;
+    }
+
+    for (i = 0; i < n; i++) {
+        g_autofree char *id = NULL;
+        g_autofree char *ebpf = NULL;
+
+        if (!(id = virXMLPropStringRequired(nodes[i], "id")))
+            return -1;
+
+        if (!(ebpf = virXMLPropStringRequired(nodes[i], "data")))
+            return -1;
+
+        if (virHashAddEntry(qemuCaps->ebpfObjects, id, ebpf) < 0)
+            return -1;
+    }
+
+    return 0;
+}
+
+
 /*
  * Parsing a doc that looks like
  *
@@ -4688,6 +4742,9 @@ virQEMUCapsLoadCache(virArch hostArch,
 
     if (skipInvalidation)
         qemuCaps->invalidation = false;
+
+    if (virQEMUCapsParseEbpfObjects(qemuCaps, ctxt) < 0)
+        return -1;
 
     return 0;
 }
@@ -4926,6 +4983,16 @@ virQEMUCapsFormatHypervCapabilities(virQEMUCaps *qemuCaps,
 }
 
 
+static int
+virQEMUCapsFormatEbpfObjectsIterator(void *payload, const char *name, void *opaque)
+{
+    virBuffer *buf = opaque;
+
+    virBufferAsprintf(buf, "<object id='%s' data='%s'/>\n", name, (const char *)payload);
+
+    return 0;
+}
+
 char *
 virQEMUCapsFormatCache(virQEMUCaps *qemuCaps)
 {
@@ -5015,6 +5082,14 @@ virQEMUCapsFormatCache(virQEMUCaps *qemuCaps)
 
     if (qemuCaps->kvmSupportsSecureGuest)
         virBufferAddLit(&buf, "<kvmSupportsSecureGuest/>\n");
+
+    if (virHashSize(qemuCaps->ebpfObjects) > 0) {
+        virBufferAddLit(&buf, "<ebpf>\n");
+        virBufferAdjustIndent(&buf, 2);
+        virHashForEachSorted(qemuCaps->ebpfObjects, virQEMUCapsFormatEbpfObjectsIterator, &buf);
+        virBufferAdjustIndent(&buf, -2);
+        virBufferAddLit(&buf, "</ebpf>\n");
+    }
 
     virBufferAdjustIndent(&buf, -2);
     virBufferAddLit(&buf, "</qemuCaps>\n");
@@ -5439,6 +5514,47 @@ virQEMUCapsInitProcessCaps(virQEMUCaps *qemuCaps)
 
 
 static int
+virQEMUCapsProbeQMPEbpfObject(virQEMUCaps *qemuCaps, const char *id, qemuMonitor *mon)
+{
+    const char *ebpfObject = NULL;
+
+    ebpfObject = qemuMonitorGetEbpf(mon, id);
+    if (ebpfObject == NULL)
+        return -1;
+
+    return virHashAddEntry(qemuCaps->ebpfObjects, id, (void *)ebpfObject);
+}
+
+
+static int
+virQEMUCapsProbeQMPSchemaEbpf(virQEMUCaps *qemuCaps, GHashTable *schema, qemuMonitor *mon)
+{
+    virJSONValue *ebpfIdsArray;
+    virJSONValue *ebpfIdsSchema;
+    size_t i;
+
+    if (virQEMUQAPISchemaPathGet("request-ebpf/arg-type/id", schema, &ebpfIdsSchema) != 1)
+        return 0;
+
+    if (!(ebpfIdsArray = virJSONValueObjectGetArray(ebpfIdsSchema, "values"))) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("malformed QMP schema of 'request-ebpf'"));
+        return -1;
+    }
+
+    /* Try to request every eBPF */
+    for (i = 0; i < virJSONValueArraySize(ebpfIdsArray); i++) {
+        virJSONValue *id = virJSONValueArrayGet(ebpfIdsArray, i);
+
+        if (virQEMUCapsProbeQMPEbpfObject(qemuCaps, virJSONValueGetString(id), mon) < 0)
+            return -1;
+    }
+
+    return 0;
+}
+
+
+static int
 virQEMUCapsProbeQMPSchemaCapabilities(virQEMUCaps *qemuCaps,
                                       qemuMonitor *mon)
 {
@@ -5466,6 +5582,9 @@ virQEMUCapsProbeQMPSchemaCapabilities(virQEMUCaps *qemuCaps,
         if (virQEMUQAPISchemaPathExists(cmd->value, schema))
             virQEMUCapsSet(qemuCaps, cmd->flag);
     }
+
+    if (virQEMUCapsProbeQMPSchemaEbpf(qemuCaps, schema, mon) < 0)
+        return -1;
 
     return 0;
 }
