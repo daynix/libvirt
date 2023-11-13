@@ -38,6 +38,7 @@
 #include "qemu_checkpoint.h"
 #include "qemu_validate.h"
 #include "qemu_namespace.h"
+#include "qemu_interface.h"
 #include "viralloc.h"
 #include "virlog.h"
 #include "virerror.h"
@@ -1078,6 +1079,7 @@ qemuDomainNetworkPrivateClearFDs(qemuDomainNetworkPrivate *priv)
     g_clear_pointer(&priv->vdpafd, qemuFDPassFree);
     g_slist_free_full(g_steal_pointer(&priv->vhostfds), (GDestroyNotify) qemuFDPassDirectFree);
     g_slist_free_full(g_steal_pointer(&priv->tapfds), (GDestroyNotify) qemuFDPassDirectFree);
+    g_slist_free_full(g_steal_pointer(&priv->ebpfrssfds), (GDestroyNotify) qemuFDPassDirectFree);
 }
 
 
@@ -1089,6 +1091,8 @@ qemuDomainNetworkPrivateDispose(void *obj G_GNUC_UNUSED)
     qemuSlirpFree(priv->slirp);
 
     qemuDomainNetworkPrivateClearFDs(priv);
+
+    qemuInterfaceCloseEbpf(priv->libbpfRSSObject);
 }
 
 
