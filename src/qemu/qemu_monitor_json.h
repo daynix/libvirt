@@ -825,3 +825,6 @@ qemuMonitorJSONQueryStats(qemuMonitor *mon,
                           qemuMonitorQueryStatsTargetType target,
                           char **vcpus,
                           GPtrArray *providers);
+
+const char *
+qemuMonitorJSONGetEbpf(qemuMonitor *mon, const char *ebpfName);
