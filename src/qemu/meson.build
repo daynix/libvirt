@@ -105,6 +105,7 @@ if conf.has('WITH_QEMU')
       selinux_dep,
       src_dep,
       xdr_dep,
+      bpf_dep,
     ],
     include_directories: [
       conf_inc_dir,

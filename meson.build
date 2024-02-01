@@ -1361,6 +1361,11 @@ if yajl_dep.found()
   conf.set('WITH_YAJL', 1)
 endif
 
+bpf_version = '1.1.0'
+bpf_dep = dependency('libbpf', version: '>=' + bpf_version, required: get_option('bpf'))
+if bpf_dep.found()
+    conf.set('WITH_BPF', 1)
+endif
 
 # generic build dependencies checks
 
@@ -2281,6 +2286,7 @@ libs_summary = {
   'udev': udev_dep.found(),
   'xdr': xdr_dep.found(),
   'yajl': yajl_dep.found(),
+  'bpf': bpf_dep.found(),
 }
 summary(libs_summary, section: 'Libraries', bool_yn: true)
 

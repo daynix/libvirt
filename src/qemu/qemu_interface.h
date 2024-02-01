@@ -55,3 +55,7 @@ int qemuInterfaceOpenVhostNet(virDomainObj *def,
 
 int qemuInterfacePrepareSlirp(virQEMUDriver *driver,
                               virDomainNetDef *net);
+
+int qemuInterfaceLoadEbpf(const char *ebpfObject, void **retLibbpfObj, int *fds, size_t nfds);
+
+void qemuInterfaceCloseEbpf(void *libbpfObj);
