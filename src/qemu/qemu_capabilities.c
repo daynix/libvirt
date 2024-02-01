@@ -701,6 +701,9 @@ VIR_ENUM_IMPL(virQEMUCaps,
               "virtio-blk.iothread-mapping", /* QEMU_CAPS_VIRTIO_BLK_IOTHREAD_MAPPING */
               "smp-clusters", /* QEMU_CAPS_SMP_CLUSTERS */
               "virtio-mem-pci.dynamic-memslots", /* QEMU_CAPS_DEVICE_VIRTIO_MEM_PCI_DYNAMIC_MEMSLOTS */
+
+              /* 455 */
+              "virtio-net.ebpf_rss_fds", /* QEMU_CAPS_VIRTIO_NET_EBPF_RSS_FDS */
     );
 
 
@@ -1440,6 +1443,7 @@ static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsVirtioBlk[] = {
 static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsVirtioNet[] = {
     { "acpi-index", QEMU_CAPS_ACPI_INDEX, NULL },
     { "rss", QEMU_CAPS_VIRTIO_NET_RSS, NULL },
+    { "ebpf-rss-fds", QEMU_CAPS_VIRTIO_NET_EBPF_RSS_FDS, NULL },
 };
 
 static struct virQEMUCapsDevicePropsFlags virQEMUCapsDevicePropsPCIeRootPort[] = {

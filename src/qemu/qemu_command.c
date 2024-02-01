@@ -3833,6 +3833,25 @@ qemuBuildLegacyNicStr(virDomainNetDef *net)
 }
 
 
+static virJSONValue *
+qemuBuildEbpfRssArg(virDomainNetDef *net)
+{
+    qemuDomainNetworkPrivate *netpriv = QEMU_DOMAIN_NETWORK_PRIVATE(net);
+    g_autoptr(virJSONValue) props = NULL;
+
+    GSList *n;
+
+    if (netpriv->ebpfrssfds)
+        props = virJSONValueNewArray();
+
+    for (n = netpriv->ebpfrssfds; n; n = n->next) {
+        virJSONValueArrayAppendString(props, qemuFDPassDirectGetPath(n->data));
+    }
+
+    return g_steal_pointer(&props);
+}
+
+
 virJSONValue *
 qemuBuildNicDevProps(virDomainDef *def,
                      virDomainNetDef *net,
@@ -3841,6 +3860,7 @@ qemuBuildNicDevProps(virDomainDef *def,
     g_autoptr(virJSONValue) props = NULL;
     char macaddr[VIR_MAC_STRING_BUFLEN];
     g_autofree char *netdev = g_strdup_printf("host%s", net->info.alias);
+    g_autoptr(virJSONValue) ebpffds = NULL;
 
     if (virDomainNetIsVirtioModel(net)) {
         const char *tx = NULL;
@@ -3891,6 +3911,8 @@ qemuBuildNicDevProps(virDomainDef *def,
         if (!(props = qemuBuildVirtioDevProps(VIR_DOMAIN_DEVICE_NET, net, qemuCaps)))
             return NULL;
 
+        ebpffds = qemuBuildEbpfRssArg(net);
+
         if (virJSONValueObjectAdd(&props,
                                   "S:tx", tx,
                                   "T:ioeventfd", net->driver.virtio.ioeventfd,
@@ -3915,6 +3937,7 @@ qemuBuildNicDevProps(virDomainDef *def,
                                   "T:hash", net->driver.virtio.rss_hash_report,
                                   "p:host_mtu", net->mtu,
                                   "T:failover", failover,
+                                  "A:ebpf-rss-fds", &ebpffds,
                                   NULL) < 0)
             return NULL;
     } else {
@@ -4195,6 +4218,38 @@ qemuBuildWatchdogDevProps(const virDomainDef *def,
         return NULL;
 
     return g_steal_pointer(&props);
+}
+
+
+static void
+qemuOpenEbpfRssFds(virDomainNetDef *net, virQEMUCaps *qemuCaps)
+{
+    const char *ebpfRSSObject = NULL;
+    int fds[16];
+    int nfds = 0;
+    size_t i = 0;
+    qemuDomainNetworkPrivate *netpriv = QEMU_DOMAIN_NETWORK_PRIVATE(net);
+
+    netpriv->libbpfRSSObject = NULL;
+    netpriv->ebpfrssfds = NULL;
+
+    /* Add ebpf values */
+    if (net->driver.virtio.rss == VIR_TRISTATE_SWITCH_ON
+        && virQEMUCapsGet(qemuCaps, QEMU_CAPS_VIRTIO_NET_EBPF_RSS_FDS)) {
+        ebpfRSSObject = virQEMUCapsGetEbpf(qemuCaps, "rss");
+        nfds = qemuInterfaceLoadEbpf(ebpfRSSObject, &netpriv->libbpfRSSObject, fds, 16);
+
+        if (nfds > 0) {
+            for (i = 0; i < nfds; ++i) {
+                g_autofree char *name = g_strdup_printf("ebpfrssfd-%s-%zu", net->info.alias, i);
+
+                netpriv->ebpfrssfds =
+                    g_slist_prepend(netpriv->ebpfrssfds, qemuFDPassDirectNew(name, fds + i));
+            }
+        }
+
+        netpriv->ebpfrssfds = g_slist_reverse(netpriv->ebpfrssfds);
+    }
 }
 
 
@@ -8855,6 +8910,10 @@ qemuBuildInterfaceCommandLine(virQEMUDriver *driver,
 
     qemuFDPassDirectTransferCommand(netpriv->slirpfd, cmd);
     qemuFDPassTransferCommand(netpriv->vdpafd, cmd);
+
+    qemuOpenEbpfRssFds(net, qemuCaps);
+    for (n = netpriv->ebpfrssfds; n; n = n->next)
+        qemuFDPassDirectTransferCommand(n->data, cmd);
 
     if (!(hostnetprops = qemuBuildHostNetProps(vm, net)))
         goto cleanup;
