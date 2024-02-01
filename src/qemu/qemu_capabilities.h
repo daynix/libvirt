@@ -896,3 +896,6 @@ int
 virQEMUCapsProbeQMPMachineTypes(virQEMUCaps *qemuCaps,
                                 virDomainVirtType virtType,
                                 qemuMonitor *mon);
+
+const char *
+virQEMUCapsGetEbpf(virQEMUCaps *qemuCaps, const char *id);
