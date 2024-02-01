@@ -8863,3 +8863,30 @@ qemuMonitorJSONQueryStats(qemuMonitor *mon,
 
     return virJSONValueObjectStealArray(reply, "return");
 }
+
+
+const char *
+qemuMonitorJSONGetEbpf(qemuMonitor *mon, const char *ebpfName)
+{
+    g_autoptr(virJSONValue) cmd = NULL;
+    g_autoptr(virJSONValue) reply = NULL;
+    virJSONValue *ret = NULL;
+
+    if (!(cmd = qemuMonitorJSONMakeCommand("request-ebpf", "s:id", ebpfName, NULL)))
+        return NULL;
+
+    if (qemuMonitorJSONCommand(mon, cmd, &reply) < 0)
+        return NULL;
+
+    if (qemuMonitorJSONCheckError(cmd, reply) < 0)
+        return NULL;
+
+    ret = virJSONValueObjectGet(reply, "return");
+    if (!ret) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("request-ebpf reply was missing 'return' data"));
+        return NULL;
+    }
+
+    return g_strdup(virJSONValueObjectGetString(ret, "object"));
+}

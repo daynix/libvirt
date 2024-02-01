@@ -4523,3 +4523,16 @@ qemuMonitorGetStatsByQOMPath(virJSONValue *arr,
 
     return NULL;
 }
+
+const char *
+qemuMonitorGetEbpf(qemuMonitor *mon, const char *ebpfName)
+{
+    QEMU_CHECK_MONITOR_NULL(mon);
+
+    if (ebpfName == NULL) {
+        virReportInvalidNonNullArg(ebpfName);
+        return NULL;
+    }
+
+    return qemuMonitorJSONGetEbpf(mon, ebpfName);
+}

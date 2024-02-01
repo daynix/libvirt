@@ -1581,3 +1581,6 @@ qemuMonitorExtractQueryStats(virJSONValue *info);
 virJSONValue *
 qemuMonitorGetStatsByQOMPath(virJSONValue *arr,
                              char *qom_path);
+
+const char *
+qemuMonitorGetEbpf(qemuMonitor *mon, const char *ebpfName);
